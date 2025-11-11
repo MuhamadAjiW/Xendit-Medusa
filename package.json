@@ -1,0 +1,21 @@
+{
+  "name": "xendit-medusa-monorepo",
+  "version": "0.0.1",
+  "private": true,
+  "scripts": {
+    "dev": "pnpm --parallel --filter \"./packages/*\" dev",
+    "build": "pnpm --filter \"./packages/*\" build",
+    "lint": "pnpm --filter \"./packages/*\" lint",
+    "format": "biome format --write .",
+    "check": "biome check --write .",
+    "test": "pnpm --filter \"./packages/*\" test"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.4",
+    "typescript": "^5.3.3"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "pnpm": ">=8.0.0"
+  }
+}

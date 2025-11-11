@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:18
+    container_name: medusa-postgres
+    environment:
+      POSTGRES_USER: medusa
+      POSTGRES_PASSWORD: medusa123
+      POSTGRES_DB: medusa_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql
+
+  redis:
+    image: redis:8-alpine
+    container_name: medusa-redis
+    ports:
+      - "6379:6379"
+
+volumes:
+  postgres_data:
