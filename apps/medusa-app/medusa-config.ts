@@ -13,16 +13,6 @@ module.exports = defineConfig({
       cookieSecret: process.env.COOKIE_SECRET || "supersecret",
     },
   },
-  plugins: [
-    {
-      resolve: "xendit-medusa",
-      options: {
-        api_key: process.env.XENDIT_SECRET_KEY || "",
-        webhook_token: process.env.XENDIT_WEBHOOK_TOKEN,
-        default_country: process.env.XENDIT_DEFAULT_COUNTRY || "ID",
-      },
-    },
-  ],
   modules: [
     {
       resolve: "@medusajs/medusa/payment",

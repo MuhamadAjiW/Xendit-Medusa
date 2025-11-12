@@ -1,0 +1,13 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "tasks": {
+    "compile": {
+      "dependsOn": ["^compile"],
+      "outputs": ["dist/**", ".medusa/**"]
+    },
+    "build": {
+      "dependsOn": ["^build"],
+      "outputs": ["dist/**", ".medusa/**"]
+    }
+  }
+}
