@@ -111,12 +111,17 @@ const Payment = ({
           };
         }
 
-        const session = await initiatePaymentSession(cart, sessionData);
+        await initiatePaymentSession(cart, sessionData);
 
-        // For Xendit, redirect to the payment link immediately
-        if (isXendit(selectedPaymentMethod) && session?.data?.invoice_url) {
-          window.location.href = session.data.invoice_url as string;
-          return;
+        // For Xendit, we need to refetch the cart to get the updated payment session with invoice_url
+        // Then we can redirect to the payment link
+        if (isXendit(selectedPaymentMethod)) {
+          // The cart should now have the payment session with invoice_url
+          // We'll redirect on the next render when the component sees the updated cart
+          // Or we could refetch the cart here and redirect immediately
+          return router.push(`${pathname}?${createQueryString("step", "review")}`, {
+            scroll: false,
+          });
         }
       }
 
