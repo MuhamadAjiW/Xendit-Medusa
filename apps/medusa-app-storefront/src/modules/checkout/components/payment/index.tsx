@@ -1,27 +1,38 @@
 "use client"
 
 import { RadioGroup } from "@headlessui/react"
-import { isStripeLike, paymentInfoMap } from "@lib/constants"
+import { isStripeLike, isXendit, paymentInfoMap } from "@lib/constants"
 import { initiatePaymentSession } from "@lib/data/cart"
 import { CheckCircleSolid, CreditCard } from "@medusajs/icons"
+import type { HttpTypes } from "@medusajs/types"
 import { Button, Container, Heading, Text, clx } from "@medusajs/ui"
 import ErrorMessage from "@modules/checkout/components/error-message"
 import PaymentContainer, {
   StripeCardContainer,
 } from "@modules/checkout/components/payment-container"
+import { XenditPayment } from "@modules/checkout/components/payment-container/xendit-payment"
 import Divider from "@modules/common/components/divider"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { useCallback, useEffect, useState } from "react"
+
+type PaymentMethod = {
+  id: string
+  [key: string]: unknown
+}
+
+type ExtendedStoreCart = HttpTypes.StoreCart & {
+  gift_cards?: unknown[]
+}
 
 const Payment = ({
   cart,
   availablePaymentMethods,
 }: {
-  cart: any
-  availablePaymentMethods: any[]
+  cart: ExtendedStoreCart
+  availablePaymentMethods: PaymentMethod[]
 }) => {
   const activeSession = cart.payment_collection?.payment_sessions?.find(
-    (paymentSession: any) => paymentSession.status === "pending"
+    (paymentSession) => paymentSession.status === "pending"
   )
 
   const [isLoading, setIsLoading] = useState(false)
@@ -31,6 +42,7 @@ const Payment = ({
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState(
     activeSession?.provider_id ?? ""
   )
+  const [xenditChannel, setXenditChannel] = useState<string>("")
 
   const searchParams = useSearchParams()
   const router = useRouter()
@@ -46,13 +58,18 @@ const Payment = ({
         provider_id: method,
       })
     }
+    // Reset Xendit channel selection when switching payment methods
+    if (!isXendit(method)) {
+      setXenditChannel("")
+    }
   }
 
   const paidByGiftcard =
     cart?.gift_cards && cart?.gift_cards?.length > 0 && cart?.total === 0
 
   const paymentReady =
-    (activeSession && cart?.shipping_methods.length !== 0) || paidByGiftcard
+    (activeSession && (cart?.shipping_methods?.length ?? 0) !== 0) ||
+    paidByGiftcard
 
   const createQueryString = useCallback(
     (name: string, value: string) => {
@@ -65,7 +82,7 @@ const Payment = ({
   )
 
   const handleEdit = () => {
-    router.push(pathname + "?" + createQueryString("step", "payment"), {
+    router.push(`${pathname}?${createQueryString("step", "payment")}`, {
       scroll: false,
     })
   }
@@ -79,22 +96,53 @@ const Payment = ({
       const checkActiveSession =
         activeSession?.provider_id === selectedPaymentMethod
 
+      // For Xendit, we need to ensure a channel is selected
+      if (isXendit(selectedPaymentMethod) && !xenditChannel) {
+        setError("Please select a payment channel")
+        setIsLoading(false)
+        return
+      }
+
       if (!checkActiveSession) {
-        await initiatePaymentSession(cart, {
+        const sessionData: {
+          provider_id: string
+          data?: {
+            channel_code: string
+            channel_properties: {
+              success_return_url: string
+              failure_return_url: string
+              cancel_return_url: string
+            }
+          }
+        } = {
           provider_id: selectedPaymentMethod,
-        })
+        }
+
+        // Add Xendit-specific data
+        if (isXendit(selectedPaymentMethod)) {
+          sessionData.data = {
+            channel_code: xenditChannel,
+            channel_properties: {
+              success_return_url: `${window.location.origin}/checkout?step=review&payment=success`,
+              failure_return_url: `${window.location.origin}/checkout?step=payment&payment=failed`,
+              cancel_return_url: `${window.location.origin}/checkout?step=payment&payment=cancelled`,
+            },
+          }
+        }
+
+        await initiatePaymentSession(cart, sessionData)
       }
 
       if (!shouldInputCard) {
         return router.push(
-          pathname + "?" + createQueryString("step", "review"),
+          `${pathname}?${createQueryString("step", "review")}`,
           {
             scroll: false,
           }
         )
       }
-    } catch (err: any) {
-      setError(err.message)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "An error occurred")
     } finally {
       setIsLoading(false)
     }
@@ -102,7 +150,7 @@ const Payment = ({
 
   useEffect(() => {
     setError(null)
-  }, [isOpen])
+  }, [])
 
   return (
     <div className="bg-white">
@@ -123,6 +171,7 @@ const Payment = ({
         {!isOpen && paymentReady && (
           <Text>
             <button
+              type="button"
               onClick={handleEdit}
               className="text-ui-fg-interactive hover:text-ui-fg-interactive-hover"
               data-testid="edit-payment-button"
@@ -135,33 +184,46 @@ const Payment = ({
       <div>
         <div className={isOpen ? "block" : "hidden"}>
           {!paidByGiftcard && availablePaymentMethods?.length && (
-            <>
-              <RadioGroup
-                value={selectedPaymentMethod}
-                onChange={(value: string) => setPaymentMethod(value)}
-              >
-                {availablePaymentMethods.map((paymentMethod) => (
-                  <div key={paymentMethod.id}>
-                    {isStripeLike(paymentMethod.id) ? (
-                      <StripeCardContainer
-                        paymentProviderId={paymentMethod.id}
-                        selectedPaymentOptionId={selectedPaymentMethod}
-                        paymentInfoMap={paymentInfoMap}
-                        setCardBrand={setCardBrand}
-                        setError={setError}
-                        setCardComplete={setCardComplete}
-                      />
-                    ) : (
-                      <PaymentContainer
-                        paymentInfoMap={paymentInfoMap}
-                        paymentProviderId={paymentMethod.id}
-                        selectedPaymentOptionId={selectedPaymentMethod}
-                      />
-                    )}
-                  </div>
-                ))}
-              </RadioGroup>
-            </>
+            <RadioGroup
+              value={selectedPaymentMethod}
+              onChange={(value: string) => setPaymentMethod(value)}
+            >
+              {availablePaymentMethods.map((paymentMethod) => (
+                <div key={paymentMethod.id}>
+                  {isStripeLike(paymentMethod.id) ? (
+                    <StripeCardContainer
+                      paymentProviderId={paymentMethod.id}
+                      selectedPaymentOptionId={selectedPaymentMethod}
+                      paymentInfoMap={paymentInfoMap}
+                      setCardBrand={setCardBrand}
+                      setError={setError}
+                      setCardComplete={setCardComplete}
+                    />
+                  ) : isXendit(paymentMethod.id) ? (
+                    <PaymentContainer
+                      paymentInfoMap={paymentInfoMap}
+                      paymentProviderId={paymentMethod.id}
+                      selectedPaymentOptionId={selectedPaymentMethod}
+                    >
+                      {selectedPaymentMethod === paymentMethod.id && (
+                        <div className="mt-4">
+                          <XenditPayment
+                            onChannelSelect={setXenditChannel}
+                            selectedChannel={xenditChannel}
+                          />
+                        </div>
+                      )}
+                    </PaymentContainer>
+                  ) : (
+                    <PaymentContainer
+                      paymentInfoMap={paymentInfoMap}
+                      paymentProviderId={paymentMethod.id}
+                      selectedPaymentOptionId={selectedPaymentMethod}
+                    />
+                  )}
+                </div>
+              ))}
+            </RadioGroup>
           )}
 
           {paidByGiftcard && (
@@ -190,12 +252,15 @@ const Payment = ({
             isLoading={isLoading}
             disabled={
               (isStripeLike(selectedPaymentMethod) && !cardComplete) ||
+              (isXendit(selectedPaymentMethod) && !xenditChannel) ||
               (!selectedPaymentMethod && !paidByGiftcard)
             }
             data-testid="submit-payment-button"
           >
             {!activeSession && isStripeLike(selectedPaymentMethod)
-              ? " Enter card details"
+              ? "Enter card details"
+              : isXendit(selectedPaymentMethod) && !xenditChannel
+              ? "Select payment channel"
               : "Continue to review"}
           </Button>
         </div>

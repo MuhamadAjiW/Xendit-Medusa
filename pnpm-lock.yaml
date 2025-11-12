@@ -29,6 +29,9 @@ importers:
       '@medusajs/medusa':
         specifier: 2.11.3
         version: 2.11.3(@medusajs/admin-sdk@2.11.3)(@medusajs/cli@2.11.3(@types/node@20.19.24))(@medusajs/framework@2.11.3(@medusajs/cli@2.11.3(@types/node@20.19.24))(@types/node@20.19.24)(ioredis@5.8.2)(vite@5.4.21(@types/node@20.19.24)(terser@5.44.1)))(@medusajs/icons@2.11.3(react@18.3.1))(@medusajs/test-utils@2.11.3)(@medusajs/ui@4.0.27(@types/react-dom@18.3.7(@types/react@18.3.26))(@types/react@18.3.26)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(typescript@5.9.3))(@swc/core@1.15.1(@swc/helpers@0.5.17))(@types/node@20.19.24)(@types/react-dom@18.3.7(@types/react@18.3.26))(@types/react@18.3.26)(awilix@8.0.1)(posthog-node@5.11.2)(react-dom@18.3.1(react@18.3.1))(react-router-dom@6.20.1(react-dom@18.3.1(react@18.3.1))(react@18.3.1))(react@18.3.1)(terser@5.44.1)(typescript@5.9.3)(yalc@1.0.0-pre.53)
+      xendit-medusa:
+        specifier: workspace:*
+        version: link:../../packages/xendit-medusa
     devDependencies:
       '@medusajs/test-utils':
         specifier: 2.11.3

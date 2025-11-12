@@ -1,7 +1,7 @@
 {
   "name": "xendit-medusa",
   "version": "0.1.0",
-  "description": "Xendit payment provider plugin for Medusa v2. Accept payments from Indonesian e-wallets (OVO, DANA, GoPay, LinkAja), virtual accounts, QR codes, and cards.",
+  "description": "Xendit payment provider plugin for Medusa v2. Accept payments from Southeast Asian payment methods including Indonesian e-wallets (OVO, DANA, LinkAja, ShopeePay), virtual accounts (BCA, BNI, BRI, Mandiri), QR codes (QRIS), and cards. Implements Xendit Payments API v3 with full webhook support.",
   "author": "MuhamadAjiW",
   "repository": {
     "type": "git",

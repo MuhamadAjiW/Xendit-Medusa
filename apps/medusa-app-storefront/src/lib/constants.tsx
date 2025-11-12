@@ -1,4 +1,4 @@
-import React from "react"
+import type React from "react"
 import { CreditCard } from "@medusajs/icons"
 
 import Ideal from "@modules/common/icons/ideal"
@@ -34,6 +34,15 @@ export const paymentInfoMap: Record<
     title: "Manual Payment",
     icon: <CreditCard />,
   },
+  // Xendit Payment Provider
+  pp_xendit_xendit: {
+    title: "Xendit Payment Gateway",
+    icon: <CreditCard />,
+  },
+  xendit: {
+    title: "Xendit Payment Gateway",
+    icon: <CreditCard />,
+  },
   // Add more payment providers here
 }
 
@@ -47,8 +56,13 @@ export const isStripeLike = (providerId?: string) => {
 export const isPaypal = (providerId?: string) => {
   return providerId?.startsWith("pp_paypal")
 }
+
 export const isManual = (providerId?: string) => {
   return providerId?.startsWith("pp_system_default")
+}
+
+export const isXendit = (providerId?: string) => {
+  return providerId?.startsWith("pp_xendit") || providerId === "xendit"
 }
 
 // Add currencies that don't need to be divided by 100

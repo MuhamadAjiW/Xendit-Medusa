@@ -70,7 +70,9 @@ Create or update your `.env` file:
 # Required: Get from https://dashboard.xendit.co/settings/developers#api-keys
 XENDIT_SECRET_KEY=xnd_development_your_secret_key_here
 
-# Optional but recommended: Get from https://dashboard.xendit.co/settings/developers#webhooks
+# Required for production (optional for development): Get from https://dashboard.xendit.co/settings/developers#webhooks
+# STRONGLY RECOMMENDED by Xendit to prevent man-in-the-middle attacks and money loss incidents
+# This is the "Callback Token" shown when you set your webhook URL
 XENDIT_WEBHOOK_TOKEN=your_webhook_verification_token_here
 ```
 
@@ -91,7 +93,7 @@ XENDIT_WEBHOOK_TOKEN=your_webhook_verification_token_here
 | Option | Type | Required | Default | Description |
 |--------|------|----------|---------|-------------|
 | `api_key` | string | Yes | - | Your Xendit secret API key |
-| `webhook_token` | string | No | - | Webhook verification token for security |
+| `webhook_token` | string | **Prod: Yes**<br>Dev: No | - | Webhook verification token - **REQUIRED for production** to verify webhook authenticity and prevent attacks |
 | `api_url` | string | No | `https://api.xendit.co` | Xendit API base URL |
 | `default_country` | string | No | `ID` | Default country code for payments |
 | `default_capture_method` | string | No | `AUTOMATIC` | Payment capture method (`AUTOMATIC` or `MANUAL`) |
@@ -112,9 +114,22 @@ Webhooks are essential for receiving real-time payment status updates from Xendi
    - `payment.failed`
 4. Copy the **Callback Token** and add it to your `.env` as `XENDIT_WEBHOOK_TOKEN`
 
-### 2. Webhook Verification
+### 2. Webhook Verification (Security)
 
-The plugin automatically verifies incoming webhooks using the `x-callback-token` header if you've configured `XENDIT_WEBHOOK_TOKEN`.
+**IMPORTANT**: Xendit strongly recommends webhook verification to prevent man-in-the-middle attacks and money loss incidents.
+
+The plugin automatically verifies incoming webhooks using the `x-callback-token` header when you configure `XENDIT_WEBHOOK_TOKEN`:
+
+- **With token**: Webhooks are verified against the token. Unauthorized requests are rejected with 401.
+- **Without token**: Webhooks are accepted but a security warning is logged. **Not recommended for production**.
+
+**How it works:**
+1. Xendit includes an `x-callback-token` header in each webhook request
+2. The plugin compares this token with your configured `XENDIT_WEBHOOK_TOKEN`
+3. Only webhooks with matching tokens are processed
+4. This ensures webhooks are actually from Xendit, not malicious third parties
+
+Reference: [Xendit Webhook Security Best Practices](https://docs.xendit.co/docs/handling-webhooks)
 
 ## Supported Payment Channels
 

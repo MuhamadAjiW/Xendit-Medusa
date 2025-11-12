@@ -21,9 +21,9 @@
  *   id: "xendit",
  *   options: {
  *     api_key: process.env.XENDIT_SECRET_KEY,
- *     webhook_token: process.env.XENDIT_WEBHOOK_TOKEN,
- *     default_country: "ID",
- *     default_capture_method: "AUTOMATIC"
+ *     webhook_token: process.env.XENDIT_WEBHOOK_TOKEN, // Optional but recommended
+ *     default_country: "ID", // Required: ISO 3166-1 alpha-2 code
+ *     capture_method: "AUTOMATIC" // Optional, defaults to AUTOMATIC
  *   }
  * }
  * ```
@@ -42,25 +42,20 @@ export type XenditProviderOptions = {
   webhook_token?: string;
 
   /**
-   * Base URL for Xendit API
-   * @default "https://api.xendit.co"
+   * Default country code for payments (Required)
+   * ISO 3166-1 alpha-2 country code
+   * Examples: "ID" (Indonesia), "PH" (Philippines), "MY" (Malaysia), "TH" (Thailand)
    */
-  api_url?: string;
+  default_country: string;
 
   /**
-   * Default country code for payments
-   * @default "ID" (Indonesia)
-   */
-  default_country?: string;
-
-  /**
-   * Default capture method
+   * Payment capture method
+   * - AUTOMATIC: Capture immediately upon authorization (default)
+   * - MANUAL: Require explicit capture call
    * @default "AUTOMATIC"
    */
-  default_capture_method?: "AUTOMATIC" | "MANUAL";
-};
-
-/**
+  capture_method?: "AUTOMATIC" | "MANUAL";
+}; /**
  * Payment request types
  */
 export type XenditRequestType = "PAY" | "PAY_AND_SAVE" | "SAVE" | "REUSABLE_PAYMENT_CODES";

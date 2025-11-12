@@ -46,7 +46,7 @@ class XenditProviderService extends AbstractPaymentProvider<XenditProviderOption
   static identifier = "xendit";
 
   protected options_: XenditProviderOptions;
-  protected apiUrl: string;
+  protected readonly apiUrl = "https://api.xendit.co";
   protected logger_: Logger;
 
   constructor(container: InjectedDependencies, options: XenditProviderOptions) {
@@ -54,18 +54,34 @@ class XenditProviderService extends AbstractPaymentProvider<XenditProviderOption
 
     this.logger_ = container.logger;
     this.options_ = options;
-    this.apiUrl = options.api_url || "https://api.xendit.co";
 
+    // Validate required options
     if (!options.api_key) {
       throw new MedusaError(MedusaError.Types.INVALID_ARGUMENT, "Xendit API key is required");
     }
 
-    this.logger_.info("Xendit Payment Provider initialized");
+    if (!options.default_country) {
+      throw new MedusaError(
+        MedusaError.Types.INVALID_ARGUMENT,
+        "Xendit default_country is required. Provide an ISO 3166-1 alpha-2 country code (e.g., 'ID', 'PH', 'MY', 'TH')",
+      );
+    }
+
+    this.logger_.info(
+      `Xendit Payment Provider initialized for country: ${options.default_country}`,
+    );
   }
 
   static validateOptions(options: Record<string, unknown>): void {
     if (!options.api_key) {
       throw new MedusaError(MedusaError.Types.INVALID_ARGUMENT, "Xendit API key is required");
+    }
+
+    if (!options.default_country) {
+      throw new MedusaError(
+        MedusaError.Types.INVALID_ARGUMENT,
+        "Xendit default_country is required. Provide an ISO 3166-1 alpha-2 country code (e.g., 'ID', 'PH', 'MY', 'TH')",
+      );
     }
   }
 
@@ -116,14 +132,16 @@ class XenditProviderService extends AbstractPaymentProvider<XenditProviderOption
         // Add integration identifier
         integration: "medusa-v2",
         integration_version: "0.1.0",
-      }; // Create payment request following Xendit Payments API v3 specification
+      };
+
+      // Create payment request following Xendit Payments API v3 specification
       const paymentRequest: XenditPaymentRequest = {
         reference_id: referenceId,
         type: "PAY", // For one-off payments; use PAY_AND_SAVE for tokenization
-        country: this.options_.default_country || "ID",
+        country: this.options_.default_country,
         currency: currency_code.toUpperCase(),
         request_amount: amountValue,
-        capture_method: this.options_.default_capture_method || "AUTOMATIC",
+        capture_method: this.options_.capture_method || "AUTOMATIC",
         channel_code: channelCode,
         channel_properties: {
           ...channelProperties,
