@@ -49,3 +49,6 @@ lerna-debug.log*
 # Medusa
 uploads
 .medusa-server
+
+# Snyk Security Extension - AI Rules (auto-generated)
+.github/instructions/snyk_rules.instructions.md

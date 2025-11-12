@@ -1,8 +1,12 @@
 {
   "name": "xendit-medusa",
-  "version": "0.0.1",
-  "description": "A starter for Medusa plugins.",
-  "author": "Medusa (https://medusajs.com)",
+  "version": "0.1.0",
+  "description": "Xendit payment provider plugin for Medusa v2. Accept payments from Indonesian e-wallets (OVO, DANA, GoPay, LinkAja), virtual accounts, QR codes, and cards.",
+  "author": "MuhamadAjiW",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/MuhamadAjiW/xendit-medusa.git"
+  },
   "license": "MIT",
   "files": [
     ".medusa/server"
@@ -23,9 +27,14 @@
   "keywords": [
     "medusa",
     "plugin",
-    "medusa-plugin-other",
+    "medusa-plugin-payment",
+    "medusa-plugin-integration",
     "medusa-plugin",
-    "medusa-v2"
+    "medusa-v2",
+    "xendit",
+    "payment-gateway",
+    "indonesia",
+    "southeast-asia"
   ],
   "scripts": {
     "build": "medusa plugin:build",
