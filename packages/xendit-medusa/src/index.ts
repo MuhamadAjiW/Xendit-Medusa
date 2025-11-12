@@ -7,5 +7,5 @@
  * Reference: https://docs.medusajs.com/learn/fundamentals/plugins/create
  */
 
-export { default as XenditProviderService } from "./providers/xendit";
+export { default as XenditProviderService } from "./providers/xendit/service";
 export * from "./providers/xendit/types";
