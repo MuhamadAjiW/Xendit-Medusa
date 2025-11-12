@@ -1,11 +1,32 @@
 /**
  * Xendit Payment Provider Types
  * Based on Xendit Payments API v3
- * Documentation: https://docs.xendit.co/docs/payments-api
+ *
+ * This file contains TypeScript type definitions for the Xendit payment provider.
+ * All types follow the official Xendit API specification.
+ *
+ * API Documentation: https://docs.xendit.co/docs/payments-api
+ * API Reference: https://docs.xendit.co/apidocs/
+ *
+ * @module xendit-medusa/types
  */
 
 /**
  * Provider options configured in medusa-config.ts
+ *
+ * Example configuration:
+ * ```typescript
+ * {
+ *   resolve: "xendit-medusa/providers/xendit",
+ *   id: "xendit",
+ *   options: {
+ *     api_key: process.env.XENDIT_SECRET_KEY,
+ *     webhook_token: process.env.XENDIT_WEBHOOK_TOKEN,
+ *     default_country: "ID",
+ *     default_capture_method: "AUTOMATIC"
+ *   }
+ * }
+ * ```
  */
 export type XenditProviderOptions = {
   /**
@@ -128,12 +149,14 @@ export type XenditUrlType = "DEEPLINK" | "WEB";
 
 /**
  * Payment action object
+ * Reference: https://docs.xendit.co/docs/payments-api-overview
  */
 export type XenditAction = {
   action: XenditActionType;
   url?: string;
   url_type?: XenditUrlType;
   method?: string;
+  qr_code?: string;
   data?: {
     account_details?: {
       account_number?: string;

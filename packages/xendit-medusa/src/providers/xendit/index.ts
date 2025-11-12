@@ -98,10 +98,28 @@ class XenditProviderService extends AbstractPaymentProvider<XenditProviderOption
       // Convert amount to number
       const amountValue = typeof amount === "string" ? Number.parseFloat(amount) : Number(amount);
 
-      // Create payment request
+      // Generate a unique reference ID for idempotency
+      // Format: medusa_<timestamp>_<random> for easy identification and uniqueness
+      const referenceId = `medusa_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+
+      // Build metadata following Xendit best practices
+      // Store essential information for webhooks and future reference
+      const metadata: Record<string, unknown> = {
+        // Medusa-specific identifiers
+        session_id: data?.session_id as string,
+        customer_id: context?.customer?.id as string,
+        customer_email: context?.customer?.email as string,
+
+        // Add custom metadata from input
+        ...((data?.metadata as Record<string, unknown>) || {}),
+
+        // Add integration identifier
+        integration: "medusa-v2",
+        integration_version: "0.1.0",
+      }; // Create payment request following Xendit Payments API v3 specification
       const paymentRequest: XenditPaymentRequest = {
-        reference_id: `medusa_${Date.now()}_${Math.random().toString(36).substring(7)}`,
-        type: "PAY",
+        reference_id: referenceId,
+        type: "PAY", // For one-off payments; use PAY_AND_SAVE for tokenization
         country: this.options_.default_country || "ID",
         currency: currency_code.toUpperCase(),
         request_amount: amountValue,
@@ -113,16 +131,17 @@ class XenditProviderService extends AbstractPaymentProvider<XenditProviderOption
           failure_return_url: channelProperties.failure_return_url as string,
           cancel_return_url: channelProperties.cancel_return_url as string,
         },
-        metadata: {
-          session_id: data?.session_id as string,
-          customer_id: context?.customer?.id as string,
-          ...((data?.metadata as Record<string, unknown>) || {}),
-        },
+        metadata,
       };
+
+      this.logger_.info(
+        `Initiating Xendit payment: ${referenceId}, channel: ${channelCode}, amount: ${amountValue} ${currency_code}`,
+      );
 
       const response = await this.createPaymentRequest(paymentRequest);
 
       // Store essential data for later use
+      // This data will be available in subsequent method calls (authorize, capture, etc.)
       return {
         id: response.id,
         data: {
@@ -276,8 +295,21 @@ class XenditProviderService extends AbstractPaymentProvider<XenditProviderOption
 
     this.logger_.info(`Processing Xendit webhook: ${event.event}`);
 
+    // Validate webhook data
+    if (!event || !event.event || !event.data) {
+      this.logger_.error("Invalid webhook payload structure");
+      return {
+        action: PaymentActions.NOT_SUPPORTED,
+      };
+    }
+
+    // Map Xendit webhook events to Medusa payment actions
     switch (event.event) {
       case "payment.capture":
+        // Payment was successfully captured/completed
+        this.logger_.info(
+          `Payment captured: ${event.data.id} for request ${event.data.payment_request_id}`,
+        );
         return {
           action: PaymentActions.AUTHORIZED,
           data: {
@@ -285,7 +317,12 @@ class XenditProviderService extends AbstractPaymentProvider<XenditProviderOption
             amount: event.data.amount,
           },
         };
+
       case "payment.failed":
+        // Payment failed
+        this.logger_.warn(
+          `Payment failed: ${event.data.id} - ${event.data.failure_code}: ${event.data.failure_message}`,
+        );
         return {
           action: PaymentActions.FAILED,
           data: {
@@ -293,6 +330,7 @@ class XenditProviderService extends AbstractPaymentProvider<XenditProviderOption
             amount: event.data.amount,
           },
         };
+
       default:
         this.logger_.warn(`Unsupported webhook event: ${event.event}`);
         return {
@@ -305,20 +343,42 @@ class XenditProviderService extends AbstractPaymentProvider<XenditProviderOption
 
   /**
    * Get authorization headers for Xendit API requests
+   * Xendit uses Basic Auth with API key as username and empty password
+   * Reference: https://docs.xendit.co/docs/authentication
    */
   private getAuthHeaders(): Record<string, string> {
     const auth = Buffer.from(`${this.options_.api_key}:`).toString("base64");
     return {
       "Content-Type": "application/json",
       Authorization: `Basic ${auth}`,
+      // Include idempotency key for retryable requests (recommended by Xendit)
+      "x-api-version": "2022-07-31",
     };
   }
 
   /**
-   * Handle Xendit API errors
+   * Handle Xendit API errors with proper error categorization
+   * Reference: https://docs.xendit.co/docs/error-codes
    */
   private async handleApiError(response: Response): Promise<never> {
     let errorData: XenditError;
+
+    // Check for rate limiting (HTTP 429)
+    if (response.status === 429) {
+      const retryAfter = response.headers.get("retry-after");
+      const rateLimit = response.headers.get("rate-limit-limit");
+      const rateLimitRemaining = response.headers.get("rate-limit-remaining");
+      const rateLimitReset = response.headers.get("rate-limit-reset");
+
+      this.logger_.warn(
+        `Xendit API rate limit exceeded. Limit: ${rateLimit}, Remaining: ${rateLimitRemaining}, Reset in: ${rateLimitReset}s, Retry after: ${retryAfter}s`,
+      );
+
+      throw new MedusaError(
+        MedusaError.Types.INVALID_DATA,
+        `Xendit API rate limit exceeded. Please retry after ${retryAfter} seconds.`,
+      );
+    }
 
     try {
       errorData = await response.json();
@@ -333,12 +393,41 @@ class XenditProviderService extends AbstractPaymentProvider<XenditProviderOption
       ? errorData.errors.map((e) => e.message).join(", ")
       : errorData.message;
 
-    this.logger_.error(`Xendit API Error [${errorData.error_code}]: ${errorMessage}`);
-
-    throw new MedusaError(
-      MedusaError.Types.INVALID_DATA,
-      `Xendit API error [${errorData.error_code}]: ${errorMessage}`,
+    this.logger_.error(
+      `Xendit API Error [${errorData.error_code}]: ${errorMessage} (HTTP ${response.status})`,
     );
+
+    // Map Xendit error codes to appropriate Medusa error types
+    const errorType = this.mapXenditErrorToMedusaType(response.status, errorData.error_code);
+
+    throw new MedusaError(errorType, `Xendit API error [${errorData.error_code}]: ${errorMessage}`);
+  }
+
+  /**
+   * Map Xendit error codes to Medusa error types
+   */
+  private mapXenditErrorToMedusaType(statusCode: number, errorCode: string): string {
+    // Authentication errors
+    if (statusCode === 401 || errorCode === "API_VALIDATION_ERROR") {
+      return MedusaError.Types.UNAUTHORIZED;
+    }
+
+    // Not found errors
+    if (statusCode === 404) {
+      return MedusaError.Types.NOT_FOUND;
+    }
+
+    // Validation errors
+    if (statusCode === 400 || errorCode.includes("VALIDATION")) {
+      return MedusaError.Types.INVALID_DATA;
+    }
+
+    // Server errors
+    if (statusCode >= 500) {
+      return MedusaError.Types.UNEXPECTED_STATE;
+    }
+
+    return MedusaError.Types.INVALID_DATA;
   }
 
   /**

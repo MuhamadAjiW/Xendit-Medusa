@@ -2,15 +2,6 @@
 
 A comprehensive payment provider plugin for Medusa v2 that integrates with [Xendit](https://www.xendit.co/), enabling merchants to accept payments from customers across Southeast Asia, particularly Indonesia.
 
-<p align="center">
-  <a href="https://www.xendit.co/">
-    <img src="https://www.xendit.co/en/wp-content/uploads/2021/08/Xendit-Logo.png" alt="Xendit" width="200"/>
-  </a>
-  <a href="https://www.medusajs.com">
-    <img src="https://user-images.githubusercontent.com/59018053/229103726-e5b529a3-9b3f-4970-8a1f-c6af37f087bf.svg" alt="Medusa" width="200"/>
-  </a>
-</p>
-
 ## Features
 
 - Full support for Xendit Payments API v3
@@ -200,12 +191,96 @@ const accountNumber = paymentSession.data.actions[0].data.account_details.accoun
 
 ## Testing
 
+### Development Mode
+
 Use Xendit test credentials for development:
+
 ```bash
 XENDIT_SECRET_KEY=xnd_development_your_test_key_here
 ```
 
-Test credentials: [Xendit Test Scenarios](https://docs.xendit.co/docs/en/test-scenarios)
+### Test Payment Scenarios
+
+Xendit provides test credentials and scenarios for different payment methods:
+
+- [Test Scenarios Documentation](https://docs.xendit.co/docs/en/test-scenarios)
+- [Simulate Different Payment Outcomes](https://docs.xendit.co/docs/simulate-error-scenarios)
+
+### Testing Webhooks Locally
+
+For local development, use tools like:
+
+- [ngrok](https://ngrok.com/) to expose your local server
+- [localtunnel](https://localtunnel.github.io/www/) as an alternative
+- Xendit Dashboard webhook simulator
+
+Example with ngrok:
+
+```bash
+ngrok http 9000
+# Use the HTTPS URL in Xendit Dashboard: https://xxxx.ngrok.io/hooks/payment/xendit
+```
+
+## Troubleshooting
+
+### Webhook Not Receiving Events
+
+1. **Check Webhook URL Configuration**
+   - Verify the URL in Xendit Dashboard matches your deployment
+   - Ensure the URL is publicly accessible (use ngrok for local testing)
+   - URL format: `https://your-domain.com/hooks/payment/xendit`
+
+2. **Verify Webhook Token**
+   - Check `XENDIT_WEBHOOK_TOKEN` is set correctly
+   - Token should match the one in Xendit Dashboard
+   - Look for "SECURITY WARNING" in logs if token is missing
+
+3. **Check Webhook Logs**
+   - View webhook delivery status in Xendit Dashboard
+   - Check your application logs for "Xendit webhook received" messages
+   - Look for error responses (401, 400, 500)
+
+### Payment Not Processing
+
+1. **Check API Key**
+   - Verify `XENDIT_SECRET_KEY` is correct
+   - Ensure using the right environment (test vs production)
+   - Check for "API_VALIDATION_ERROR" in logs
+
+2. **Rate Limiting**
+   - Default limits: 60 requests/min (test), 600 requests/min (live)
+   - Check logs for "rate limit exceeded" messages
+   - Implement exponential backoff for retries
+
+3. **Payment Channel Issues**
+   - Verify the channel is enabled in your Xendit account
+   - Check minimum/maximum amounts for the channel
+   - Ensure required channel properties are provided
+
+### Common Error Codes
+
+| Error Code | Description | Solution |
+|------------|-------------|----------|
+| `API_VALIDATION_ERROR` | Invalid API key or authentication | Check your `XENDIT_SECRET_KEY` |
+| `CHANNEL_UNAVAILABLE` | Payment channel not available | Enable channel in Xendit Dashboard |
+| `INVALID_AMOUNT` | Amount outside allowed range | Check min/max amounts for channel |
+| `DUPLICATE_REQUEST` | Duplicate reference_id | Use unique reference IDs |
+
+### Debug Mode
+
+Enable detailed logging by setting log level:
+
+```typescript
+// In medusa-config.ts
+export default defineConfig({
+  projectConfig: {
+    // ... other config
+    logger: {
+      level: "debug", // Enable debug logs
+    },
+  },
+});
+```
 
 ## Resources
 
@@ -225,7 +300,7 @@ MIT
 
 ## Compatibility
 
-This starter is compatible with versions >= 2.4.0 of `@medusajs/medusa`. 
+This starter is compatible with versions >= 2.4.0 of `@medusajs/medusa`.
 
 ## Medusa Resources
 
