@@ -105,9 +105,14 @@ const Payment = ({
 
         // Add Xendit-specific data for Payment Links
         if (isXendit(selectedPaymentMethod)) {
+          // Get country code from the current URL
+          const countryCode = window.location.pathname.split("/")[1] || "id";
+
           sessionData.data = {
-            success_redirect_url: `${window.location.origin}/order/confirmed`,
-            failure_redirect_url: `${window.location.origin}/checkout?step=payment&status=failed`,
+            // Redirect to checkout success page which will handle order confirmation
+            // regardless of authentication status
+            success_redirect_url: `${window.location.origin}/${countryCode}/checkout?step=success`,
+            failure_redirect_url: `${window.location.origin}/${countryCode}/checkout?step=payment&status=failed`,
           };
         }
 

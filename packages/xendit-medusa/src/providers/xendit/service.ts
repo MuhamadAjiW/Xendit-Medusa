@@ -133,12 +133,15 @@ class XenditProviderService extends AbstractPaymentProvider<XenditProviderOption
       const paymentMethods = (data?.payment_methods as XenditPaymentMethod[]) || undefined;
 
       // Get redirect URLs from data or use defaults
+      // Default country code from options
+      const defaultCountry = this.options_.default_country.toLowerCase();
+
       const successUrl =
         (data?.success_redirect_url as string) ||
-        `${process.env.FRONTEND_URL || "http://localhost:8000"}/order/confirmed`;
+        `${process.env.FRONTEND_URL || "http://localhost:8000"}/${defaultCountry}/checkout?step=success`;
       const failureUrl =
         (data?.failure_redirect_url as string) ||
-        `${process.env.FRONTEND_URL || "http://localhost:8000"}/checkout?step=payment&status=failed`;
+        `${process.env.FRONTEND_URL || "http://localhost:8000"}/${defaultCountry}/checkout?step=payment&status=failed`;
 
       // Build customer information from context
       const customer = context?.customer
