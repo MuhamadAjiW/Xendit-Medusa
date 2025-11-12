@@ -2,16 +2,17 @@ import type { MedusaRequest, MedusaResponse } from "@medusajs/framework/http";
 import type { Logger } from "@medusajs/framework/types";
 
 /**
- * Xendit Webhook Handler
+ * Xendit Payment Link (Invoice) Webhook Handler
  *
- * This endpoint receives webhook notifications from Xendit when payment status changes occur.
+ * This endpoint receives webhook notifications from Xendit when invoice status changes occur.
  *
  * Important: Configure this URL in your Xendit Dashboard:
  * https://your-domain.com/hooks/payment/xendit
  *
- * Supported Events:
- * - payment.capture: Payment was successfully captured
- * - payment.failed: Payment failed
+ * Supported Invoice Statuses:
+ * - PAID: Invoice was successfully paid
+ * - EXPIRED: Invoice expired without payment
+ * - PENDING: Invoice is still pending (informational)
  *
  * Security Best Practices (from Xendit):
  * - Webhook signature verification using x-callback-token header
@@ -28,13 +29,13 @@ export async function POST(req: MedusaRequest, res: MedusaResponse): Promise<voi
 
   try {
     const payload = req.body as Record<string, unknown>;
-    const payloadData = payload.data as Record<string, unknown> | undefined;
-    const paymentId = payloadData?.id as string | undefined;
-    const paymentRequestId = payloadData?.payment_request_id as string | undefined;
+    const invoiceId = payload.id as string | undefined;
+    const externalId = payload.external_id as string | undefined;
+    const status = payload.status as string | undefined;
 
     // Log incoming webhook for debugging (without sensitive data)
     logger.info(
-      `Xendit webhook received - Event: ${payload.event}, Payment Request ID: ${paymentRequestId || "N/A"}`,
+      `Xendit Invoice webhook received - Invoice ID: ${invoiceId || "N/A"}, External ID: ${externalId || "N/A"}, Status: ${status || "N/A"}`,
     );
 
     // 1. Verify webhook signature (STRONGLY RECOMMENDED by Xendit)
@@ -68,49 +69,50 @@ export async function POST(req: MedusaRequest, res: MedusaResponse): Promise<voi
     }
 
     // 2. Validate required payload fields
-    if (!payload.event || !payload.data) {
-      logger.error("Xendit webhook rejected: invalid payload structure");
+    if (!invoiceId || !status) {
+      logger.error(
+        "Xendit webhook rejected: invalid payload structure - missing invoice_id or status",
+      );
       res.status(400).json({
         error: "Bad Request",
-        message: "Invalid webhook payload structure",
-      });
-      return;
-    }
-
-    // 3. Validate payment identifiers for idempotency
-    if (!paymentId || !paymentRequestId) {
-      logger.error("Xendit webhook rejected: missing payment identifiers");
-      res.status(400).json({
-        error: "Bad Request",
-        message: "Missing payment_id or payment_request_id",
+        message: "Invalid webhook payload structure - missing required fields",
       });
       return;
     }
 
     // Log successful verification
     logger.info(
-      `Xendit webhook verified - Event: ${payload.event}, Payment ID: ${paymentId}, Request ID: ${paymentRequestId}`,
+      `Xendit webhook verified - Invoice ID: ${invoiceId}, External ID: ${externalId}, Status: ${status}`,
     );
 
-    // 4. QUICK ACKNOWLEDGMENT (Xendit best practice)
+    // 3. QUICK ACKNOWLEDGMENT (Xendit best practice)
     // Respond immediately with 200 before processing any business logic
     // This prevents timeouts and allows Xendit's retry mechanism to work properly
     res.status(200).json({
       received: true,
-      event: payload.event,
-      payment_id: paymentId,
+      invoice_id: invoiceId,
+      external_id: externalId,
+      status: status,
       timestamp: new Date().toISOString(),
     });
 
-    // 5. The webhook payload will be automatically processed by the
+    // 4. The webhook payload will be automatically processed by the
     // Xendit payment provider's getWebhookActionAndData() method
     // through Medusa's webhook processing system
     //
     // Medusa will handle:
     // - Idempotency checking (preventing duplicate processing)
-    // - Payment status updates
-    // - Order completion
+    // - Payment/Invoice status updates
+    // - Order completion (when status is PAID)
     // - Any custom webhook handlers/subscribers
+    //
+    // The invoice webhook will contain:
+    // - id: Invoice ID
+    // - external_id: Your external reference ID
+    // - status: PAID, EXPIRED, or PENDING
+    // - paid_amount: Amount paid (for PAID status)
+    // - payment_method: Payment method used (e.g., EWALLET, BANK_TRANSFER)
+    // - payment_channel: Specific channel (e.g., OVO, DANA, BCA)
 
     // Note: Any additional processing should be done asynchronously
     // after the response has been sent, either through:

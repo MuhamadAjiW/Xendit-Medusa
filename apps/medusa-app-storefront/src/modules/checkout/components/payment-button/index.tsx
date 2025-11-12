@@ -1,178 +1,133 @@
-"use client"
+"use client";
 
-import { isManual, isStripeLike, isXendit } from "@lib/constants"
-import { placeOrder } from "@lib/data/cart"
-import type { HttpTypes } from "@medusajs/types"
-import { Button } from "@medusajs/ui"
-import { useElements, useStripe } from "@stripe/react-stripe-js"
-import type React from "react"
-import { useState } from "react"
-import ErrorMessage from "../error-message"
+import { isManual, isStripeLike, isXendit } from "@lib/constants";
+import { placeOrder } from "@lib/data/cart";
+import type { HttpTypes } from "@medusajs/types";
+import { Button } from "@medusajs/ui";
+import { useElements, useStripe } from "@stripe/react-stripe-js";
+import type React from "react";
+import { useState } from "react";
+import ErrorMessage from "../error-message";
 
 type PaymentButtonProps = {
-  cart: HttpTypes.StoreCart
-  "data-testid": string
-}
+  cart: HttpTypes.StoreCart;
+  "data-testid": string;
+};
 
-const PaymentButton: React.FC<PaymentButtonProps> = ({
-  cart,
-  "data-testid": dataTestId,
-}) => {
+const PaymentButton: React.FC<PaymentButtonProps> = ({ cart, "data-testid": dataTestId }) => {
   const notReady =
     !cart ||
     !cart.shipping_address ||
     !cart.billing_address ||
     !cart.email ||
-    (cart.shipping_methods?.length ?? 0) < 1
+    (cart.shipping_methods?.length ?? 0) < 1;
 
-  const paymentSession = cart.payment_collection?.payment_sessions?.[0]
+  const paymentSession = cart.payment_collection?.payment_sessions?.[0];
 
   switch (true) {
     case isStripeLike(paymentSession?.provider_id):
-      return (
-        <StripePaymentButton
-          notReady={notReady}
-          cart={cart}
-          data-testid={dataTestId}
-        />
-      )
+      return <StripePaymentButton notReady={notReady} cart={cart} data-testid={dataTestId} />;
     case isXendit(paymentSession?.provider_id):
-      return (
-        <XenditPaymentButton
-          notReady={notReady}
-          cart={cart}
-          data-testid={dataTestId}
-        />
-      )
+      return <XenditPaymentButton notReady={notReady} cart={cart} data-testid={dataTestId} />;
     case isManual(paymentSession?.provider_id):
-      return (
-        <ManualTestPaymentButton notReady={notReady} data-testid={dataTestId} />
-      )
+      return <ManualTestPaymentButton notReady={notReady} data-testid={dataTestId} />;
     default:
-      return <Button disabled>Select a payment method</Button>
+      return <Button disabled>Select a payment method</Button>;
   }
-}
+};
 
 const XenditPaymentButton = ({
   cart,
   notReady,
   "data-testid": dataTestId,
 }: {
-  cart: HttpTypes.StoreCart
-  notReady: boolean
-  "data-testid"?: string
+  cart: HttpTypes.StoreCart;
+  notReady: boolean;
+  "data-testid"?: string;
 }) => {
-  const [submitting, setSubmitting] = useState(false)
-  const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const [submitting, setSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const session = cart.payment_collection?.payment_sessions?.find(
-    (s) => s.status === "pending"
-  )
+  const session = cart.payment_collection?.payment_sessions?.find((s) => s.status === "pending");
 
   const handlePayment = async () => {
-    setSubmitting(true)
-    setErrorMessage(null)
+    setSubmitting(true);
+    setErrorMessage(null);
 
     try {
-      // For Xendit, the payment session should already be created with the channel
-      // The actions object contains the redirect URL or payment instructions
-      const actions = session?.data?.actions as
-        | Array<{
-            action?: string
-            url?: string
-            url_type?: string
-            qr_code?: string
-            data?: unknown
-          }>
-        | undefined
+      // For Xendit Payment Links, the session data contains the invoice_url
+      // We redirect the customer to complete payment on Xendit's hosted page
+      const invoiceUrl = session?.data?.invoice_url as string | undefined;
 
-      if (actions && actions.length > 0) {
-        const action = actions[0]
-
-        // Check if we need to redirect the customer
-        if (action.action === "REDIRECT_CUSTOMER" && action.url) {
-          // For e-wallets and some payment methods, redirect to payment page
-          window.location.href = action.url
-          return
-        }
-
-        // For other payment methods (like Virtual Account, QRIS),
-        // the payment information is displayed to the user
-        // They complete payment outside and webhook will notify us
+      if (invoiceUrl) {
+        // Redirect to Xendit Payment Link
+        // The customer will complete payment on Xendit's hosted page
+        // After payment, Xendit will redirect back to success_redirect_url
+        // and send a webhook to confirm the payment
+        window.location.href = invoiceUrl;
+        return;
       }
 
-      // Complete the order after payment initiation
-      // The actual payment confirmation will come via webhook
-      await placeOrder()
-        .catch((err) => {
-          setErrorMessage(err.message)
-        })
-        .finally(() => {
-          setSubmitting(false)
-        })
+      // If no invoice URL, show error
+      throw new Error("Payment link not available. Please try again.");
     } catch (err) {
-      setErrorMessage(err instanceof Error ? err.message : "Payment failed")
-      setSubmitting(false)
+      setErrorMessage(err instanceof Error ? err.message : "Payment failed");
+      setSubmitting(false);
     }
-  }
+  };
 
   return (
     <>
       <Button
-        disabled={notReady}
+        disabled={notReady || !session?.data?.invoice_url}
         onClick={handlePayment}
         size="large"
         isLoading={submitting}
         data-testid={dataTestId}
       >
-        Place order
+        Proceed to Payment
       </Button>
-      <ErrorMessage
-        error={errorMessage}
-        data-testid="xendit-payment-error-message"
-      />
+      <ErrorMessage error={errorMessage} data-testid="xendit-payment-error-message" />
     </>
-  )
-}
+  );
+};
 
 const StripePaymentButton = ({
   cart,
   notReady,
   "data-testid": dataTestId,
 }: {
-  cart: HttpTypes.StoreCart
-  notReady: boolean
-  "data-testid"?: string
+  cart: HttpTypes.StoreCart;
+  notReady: boolean;
+  "data-testid"?: string;
 }) => {
-  const [submitting, setSubmitting] = useState(false)
-  const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const [submitting, setSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const onPaymentCompleted = async () => {
     await placeOrder()
       .catch((err) => {
-        setErrorMessage(err.message)
+        setErrorMessage(err.message);
       })
       .finally(() => {
-        setSubmitting(false)
-      })
-  }
+        setSubmitting(false);
+      });
+  };
 
-  const stripe = useStripe()
-  const elements = useElements()
-  const card = elements?.getElement("card")
+  const stripe = useStripe();
+  const elements = useElements();
+  const card = elements?.getElement("card");
 
-  const session = cart.payment_collection?.payment_sessions?.find(
-    (s) => s.status === "pending"
-  )
+  const session = cart.payment_collection?.payment_sessions?.find((s) => s.status === "pending");
 
-  const disabled = !stripe || !elements
+  const disabled = !stripe || !elements;
 
   const handlePayment = async () => {
-    setSubmitting(true)
+    setSubmitting(true);
 
     if (!stripe || !elements || !card || !cart) {
-      setSubmitting(false)
-      return
+      setSubmitting(false);
+      return;
     }
 
     await stripe
@@ -196,29 +151,26 @@ const StripePaymentButton = ({
       })
       .then(({ error, paymentIntent }) => {
         if (error) {
-          const pi = error.payment_intent
+          const pi = error.payment_intent;
 
-          if (
-            (pi && pi.status === "requires_capture") ||
-            (pi && pi.status === "succeeded")
-          ) {
-            onPaymentCompleted()
+          if ((pi && pi.status === "requires_capture") || (pi && pi.status === "succeeded")) {
+            onPaymentCompleted();
           }
 
-          setErrorMessage(error.message || null)
-          return
+          setErrorMessage(error.message || null);
+          return;
         }
 
         if (
           (paymentIntent && paymentIntent.status === "requires_capture") ||
           paymentIntent.status === "succeeded"
         ) {
-          return onPaymentCompleted()
+          return onPaymentCompleted();
         }
 
-        return
-      })
-  }
+        return;
+      });
+  };
 
   return (
     <>
@@ -231,33 +183,30 @@ const StripePaymentButton = ({
       >
         Place order
       </Button>
-      <ErrorMessage
-        error={errorMessage}
-        data-testid="stripe-payment-error-message"
-      />
+      <ErrorMessage error={errorMessage} data-testid="stripe-payment-error-message" />
     </>
-  )
-}
+  );
+};
 
 const ManualTestPaymentButton = ({ notReady }: { notReady: boolean }) => {
-  const [submitting, setSubmitting] = useState(false)
-  const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const [submitting, setSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const onPaymentCompleted = async () => {
     await placeOrder()
       .catch((err) => {
-        setErrorMessage(err.message)
+        setErrorMessage(err.message);
       })
       .finally(() => {
-        setSubmitting(false)
-      })
-  }
+        setSubmitting(false);
+      });
+  };
 
   const handlePayment = () => {
-    setSubmitting(true)
+    setSubmitting(true);
 
-    onPaymentCompleted()
-  }
+    onPaymentCompleted();
+  };
 
   return (
     <>
@@ -270,12 +219,9 @@ const ManualTestPaymentButton = ({ notReady }: { notReady: boolean }) => {
       >
         Place order
       </Button>
-      <ErrorMessage
-        error={errorMessage}
-        data-testid="manual-payment-error-message"
-      />
+      <ErrorMessage error={errorMessage} data-testid="manual-payment-error-message" />
     </>
-  )
-}
+  );
+};
 
-export default PaymentButton
+export default PaymentButton;

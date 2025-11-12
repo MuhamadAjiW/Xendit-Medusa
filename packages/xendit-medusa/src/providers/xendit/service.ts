@@ -29,13 +29,14 @@ import {
 } from "@medusajs/framework/utils";
 import type {
   XenditProviderOptions,
-  XenditPaymentRequest,
-  XenditPaymentResponse,
-  XenditWebhookEvent,
+  XenditInvoiceRequest,
+  XenditInvoiceResponse,
+  XenditInvoiceWebhookEvent,
+  XenditInvoiceStatus,
   XenditRefundRequest,
   XenditRefundResponse,
   XenditError,
-  XenditChannelCode,
+  XenditPaymentMethod,
 } from "./types";
 
 type InjectedDependencies = {
@@ -86,14 +87,14 @@ class XenditProviderService extends AbstractPaymentProvider<XenditProviderOption
   }
 
   async getPaymentStatus(input: GetPaymentStatusInput): Promise<GetPaymentStatusOutput> {
-    const paymentId = input.data?.id as string;
+    const invoiceId = input.data?.id as string;
 
     try {
-      const payment = await this.retrievePaymentFromXendit(paymentId);
+      const invoice = await this.retrieveInvoice(invoiceId);
 
       return {
-        status: this.mapXenditStatusToMedusa(payment.status),
-        data: payment as unknown as Record<string, unknown>,
+        status: this.mapInvoiceStatusToMedusa(invoice.status),
+        data: invoice as unknown as Record<string, unknown>,
       };
     } catch (error) {
       return {
@@ -107,73 +108,84 @@ class XenditProviderService extends AbstractPaymentProvider<XenditProviderOption
     try {
       const { amount, currency_code, context, data } = input;
 
-      // Extract payment channel from context
-      const channelCode = (data?.channel_code as XenditChannelCode) || "OVO";
-      const channelProperties = (data?.channel_properties as Record<string, unknown>) || {};
-
       // Convert amount to number
       const amountValue = typeof amount === "string" ? Number.parseFloat(amount) : Number(amount);
 
-      // Generate a unique reference ID for idempotency
+      // Generate a unique external ID for idempotency
       // Format: medusa_<timestamp>_<random> for easy identification and uniqueness
-      const referenceId = `medusa_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+      const externalId = `medusa_${Date.now()}_${Math.random().toString(36).substring(7)}`;
 
-      // Build metadata following Xendit best practices
-      // Store essential information for webhooks and future reference
-      const metadata: Record<string, unknown> = {
-        // Medusa-specific identifiers
-        session_id: data?.session_id as string,
-        customer_id: context?.customer?.id as string,
-        customer_email: context?.customer?.email as string,
+      // Extract payment methods from context (optional - if not provided, all methods available)
+      const paymentMethods = (data?.payment_methods as XenditPaymentMethod[]) || undefined;
 
-        // Add custom metadata from input
-        ...((data?.metadata as Record<string, unknown>) || {}),
+      // Get redirect URLs from data or use defaults
+      const successUrl =
+        (data?.success_redirect_url as string) ||
+        `${process.env.FRONTEND_URL || "http://localhost:8000"}/order/confirmed`;
+      const failureUrl =
+        (data?.failure_redirect_url as string) ||
+        `${process.env.FRONTEND_URL || "http://localhost:8000"}/checkout?step=payment&status=failed`;
 
-        // Add integration identifier
-        integration: "medusa-v2",
-        integration_version: "0.1.0",
-      };
+      // Build customer information from context
+      const customer = context?.customer
+        ? {
+            given_names: context.customer.first_name || undefined,
+            surname: context.customer.last_name || undefined,
+            email: context.customer.email || undefined,
+            mobile_number: context.customer.phone || undefined,
+          }
+        : undefined;
 
-      // Create payment request following Xendit Payments API v3 specification
-      const paymentRequest: XenditPaymentRequest = {
-        reference_id: referenceId,
-        type: "PAY", // For one-off payments; use PAY_AND_SAVE for tokenization
-        country: this.options_.default_country,
+      // Build items array - simplified since we don't have detailed cart items in context
+      const items = data?.items
+        ? (data.items as Array<{
+            name: string;
+            quantity: number;
+            price: number;
+            category?: string;
+          }>)
+        : undefined;
+
+      // Create Payment Link (Invoice) following Xendit Invoice API specification
+      const invoiceRequest: XenditInvoiceRequest = {
+        external_id: externalId,
+        amount: amountValue,
+        description: `Payment for ${context?.customer?.email || "customer"}`,
+        invoice_duration: 86400, // 24 hours expiry
         currency: currency_code.toUpperCase(),
-        request_amount: amountValue,
-        capture_method: this.options_.capture_method || "AUTOMATIC",
-        channel_code: channelCode,
-        channel_properties: {
-          ...channelProperties,
-          success_return_url: channelProperties.success_return_url as string,
-          failure_return_url: channelProperties.failure_return_url as string,
-          cancel_return_url: channelProperties.cancel_return_url as string,
+        customer,
+        customer_notification_preference: {
+          invoice_created: ["email"],
+          invoice_paid: ["email"],
         },
-        metadata,
+        success_redirect_url: successUrl,
+        failure_redirect_url: failureUrl,
+        items,
+        payment_methods: paymentMethods,
+        should_send_email: !!customer?.email,
+        locale: "en",
       };
 
       this.logger_.info(
-        `Initiating Xendit payment: ${referenceId}, channel: ${channelCode}, amount: ${amountValue} ${currency_code}`,
+        `Creating Xendit Payment Link: ${externalId}, amount: ${amountValue} ${currency_code}`,
       );
 
-      const response = await this.createPaymentRequest(paymentRequest);
+      const invoice = await this.createInvoice(invoiceRequest);
 
       // Store essential data for later use
       // This data will be available in subsequent method calls (authorize, capture, etc.)
       return {
-        id: response.id,
+        id: invoice.id,
         data: {
-          id: response.id,
-          reference_id: response.reference_id,
-          status: response.status,
-          actions: response.actions,
-          amount: response.request_amount,
-          captured_amount: response.captured_amount,
-          currency: response.currency,
-          channel_code: response.channel_code,
-          payment_method: response.payment_method,
-          created: response.created,
-          metadata: response.metadata,
+          id: invoice.id,
+          external_id: invoice.external_id,
+          status: invoice.status,
+          invoice_url: invoice.invoice_url,
+          amount: invoice.amount,
+          currency: invoice.currency,
+          expiry_date: invoice.expiry_date,
+          created: invoice.created,
+          description: invoice.description,
         },
       };
     } catch (error) {
@@ -183,15 +195,19 @@ class XenditProviderService extends AbstractPaymentProvider<XenditProviderOption
 
   async authorizePayment(input: AuthorizePaymentInput): Promise<AuthorizePaymentOutput> {
     try {
-      const paymentId = input.data?.id as string;
-      const payment = await this.retrievePaymentFromXendit(paymentId);
+      const invoiceId = input.data?.id as string;
+      const invoice = await this.retrieveInvoice(invoiceId);
 
       return {
-        status: this.mapXenditStatusToMedusa(payment.status),
+        status: this.mapInvoiceStatusToMedusa(invoice.status),
         data: {
-          id: payment.id,
-          status: payment.status,
-          captured_amount: payment.captured_amount,
+          id: invoice.id,
+          external_id: invoice.external_id,
+          status: invoice.status,
+          paid_amount: invoice.paid_amount,
+          payment_id: invoice.payment_id,
+          payment_method: invoice.payment_method,
+          payment_channel: invoice.payment_channel,
         },
       };
     } catch (error) {
@@ -201,24 +217,25 @@ class XenditProviderService extends AbstractPaymentProvider<XenditProviderOption
 
   async capturePayment(input: CapturePaymentInput): Promise<CapturePaymentOutput> {
     try {
-      const paymentId = input.data?.id as string;
-      const payment = await this.retrievePaymentFromXendit(paymentId);
+      const invoiceId = input.data?.id as string;
+      const invoice = await this.retrieveInvoice(invoiceId);
 
-      // For AUTOMATIC capture, payment is already captured
-      // For MANUAL capture, you would call a capture endpoint
-      if (payment.status === "SUCCEEDED") {
+      // For Payment Links, payment is automatically captured when status is PAID
+      if (invoice.status === "PAID") {
         return {
           data: {
-            id: payment.id,
-            status: payment.status,
-            captured_amount: payment.captured_amount,
+            id: invoice.id,
+            external_id: invoice.external_id,
+            status: invoice.status,
+            paid_amount: invoice.paid_amount,
+            payment_id: invoice.payment_id,
           },
         };
       }
 
       throw this.buildError(
         "Payment not ready for capture",
-        new Error(`Payment status: ${payment.status}`),
+        new Error(`Invoice status: ${invoice.status}`),
       );
     } catch (error) {
       throw this.buildError("An error occurred in capturePayment", error);
@@ -227,7 +244,8 @@ class XenditProviderService extends AbstractPaymentProvider<XenditProviderOption
 
   async refundPayment(input: RefundPaymentInput): Promise<RefundPaymentOutput> {
     try {
-      const paymentId = input.data?.id as string;
+      const invoiceId = input.data?.id as string;
+      const paymentId = input.data?.payment_id as string;
       const currency = input.data?.currency as string;
 
       // Convert amount to number
@@ -235,8 +253,9 @@ class XenditProviderService extends AbstractPaymentProvider<XenditProviderOption
         typeof input.amount === "string" ? Number.parseFloat(input.amount) : Number(input.amount);
 
       const refundRequest: XenditRefundRequest = {
-        reference_id: `refund_${paymentId}_${Date.now()}`,
-        payment_request_id: paymentId,
+        reference_id: `refund_${invoiceId}_${Date.now()}`,
+        invoice_id: invoiceId,
+        payment_id: paymentId,
         currency: currency || "IDR",
         amount: refundAmount,
         reason: "Customer requested refund",
@@ -260,16 +279,17 @@ class XenditProviderService extends AbstractPaymentProvider<XenditProviderOption
 
   async cancelPayment(input: CancelPaymentInput): Promise<CancelPaymentOutput> {
     try {
-      const paymentId = input.data?.id as string;
+      const invoiceId = input.data?.id as string;
 
-      // Xendit doesn't have explicit cancel endpoint for payment requests
-      // Payment will auto-expire if not completed
-      const payment = await this.retrievePaymentFromXendit(paymentId);
+      // Xendit invoices will auto-expire based on invoice_duration
+      // We can also manually expire them by calling the expire endpoint
+      const invoice = await this.expireInvoice(invoiceId);
 
       return {
         data: {
-          id: payment.id,
-          status: payment.status,
+          id: invoice.id,
+          external_id: invoice.external_id,
+          status: invoice.status,
         },
       };
     } catch (error) {
@@ -278,16 +298,18 @@ class XenditProviderService extends AbstractPaymentProvider<XenditProviderOption
   }
 
   async retrievePayment(input: RetrievePaymentInput): Promise<RetrievePaymentOutput> {
-    const paymentId = input.data?.id as string;
-    const payment = await this.retrievePaymentFromXendit(paymentId);
+    const invoiceId = input.data?.id as string;
+    const invoice = await this.retrieveInvoice(invoiceId);
 
     return {
       data: {
-        id: payment.id,
-        status: payment.status,
-        amount: payment.request_amount,
-        captured_amount: payment.captured_amount,
-        currency: payment.currency,
+        id: invoice.id,
+        external_id: invoice.external_id,
+        status: invoice.status,
+        amount: invoice.amount,
+        paid_amount: invoice.paid_amount,
+        currency: invoice.currency,
+        invoice_url: invoice.invoice_url,
       },
     };
   }
@@ -309,48 +331,57 @@ class XenditProviderService extends AbstractPaymentProvider<XenditProviderOption
   async getWebhookActionAndData(
     payload: ProviderWebhookPayload["payload"],
   ): Promise<WebhookActionResult> {
-    const event = payload.data as XenditWebhookEvent;
+    const invoiceEvent = payload.data as XenditInvoiceWebhookEvent;
 
-    this.logger_.info(`Processing Xendit webhook: ${event.event}`);
+    this.logger_.info(`Processing Xendit Invoice webhook - Status: ${invoiceEvent.status}`);
 
     // Validate webhook data
-    if (!event || !event.event || !event.data) {
+    if (!invoiceEvent || !invoiceEvent.id || !invoiceEvent.status) {
       this.logger_.error("Invalid webhook payload structure");
       return {
         action: PaymentActions.NOT_SUPPORTED,
       };
     }
 
-    // Map Xendit webhook events to Medusa payment actions
-    switch (event.event) {
-      case "payment.capture":
-        // Payment was successfully captured/completed
+    // Map Xendit invoice status to Medusa payment actions
+    switch (invoiceEvent.status) {
+      case "PAID":
+        // Invoice was successfully paid
         this.logger_.info(
-          `Payment captured: ${event.data.id} for request ${event.data.payment_request_id}`,
+          `Invoice paid: ${invoiceEvent.id} (External ID: ${invoiceEvent.external_id}), Payment ID: ${invoiceEvent.payment_id}`,
         );
         return {
           action: PaymentActions.AUTHORIZED,
           data: {
-            session_id: event.data.payment_request_id,
-            amount: event.data.amount,
+            session_id: invoiceEvent.id,
+            amount: invoiceEvent.paid_amount || invoiceEvent.amount,
           },
         };
 
-      case "payment.failed":
-        // Payment failed
+      case "EXPIRED":
+        // Invoice expired without payment
         this.logger_.warn(
-          `Payment failed: ${event.data.id} - ${event.data.failure_code}: ${event.data.failure_message}`,
+          `Invoice expired: ${invoiceEvent.id} (External ID: ${invoiceEvent.external_id})`,
         );
         return {
           action: PaymentActions.FAILED,
           data: {
-            session_id: event.data.payment_request_id,
-            amount: event.data.amount,
+            session_id: invoiceEvent.id,
+            amount: invoiceEvent.amount,
           },
         };
 
+      case "PENDING":
+        // Invoice is still pending - this is informational
+        this.logger_.info(
+          `Invoice pending: ${invoiceEvent.id} (External ID: ${invoiceEvent.external_id})`,
+        );
+        return {
+          action: PaymentActions.NOT_SUPPORTED,
+        };
+
       default:
-        this.logger_.warn(`Unsupported webhook event: ${event.event}`);
+        this.logger_.warn(`Unsupported invoice status: ${invoiceEvent.status}`);
         return {
           action: PaymentActions.NOT_SUPPORTED,
         };
@@ -449,14 +480,13 @@ class XenditProviderService extends AbstractPaymentProvider<XenditProviderOption
   }
 
   /**
-   * Create a payment request in Xendit
+   * Create a Payment Link (Invoice) in Xendit
+   * Reference: https://docs.xendit.co/apidocs/en/payment-link
    */
-  private async createPaymentRequest(
-    request: XenditPaymentRequest,
-  ): Promise<XenditPaymentResponse> {
-    this.logger_.info(`Creating Xendit payment request: ${request.reference_id}`);
+  private async createInvoice(request: XenditInvoiceRequest): Promise<XenditInvoiceResponse> {
+    this.logger_.info(`Creating Xendit Payment Link (Invoice): ${request.external_id}`);
 
-    const response = await fetch(`${this.apiUrl}/v3/payment_requests`, {
+    const response = await fetch(`${this.apiUrl}/v2/invoices`, {
       method: "POST",
       headers: this.getAuthHeaders(),
       body: JSON.stringify(request),
@@ -466,28 +496,27 @@ class XenditProviderService extends AbstractPaymentProvider<XenditProviderOption
       await this.handleApiError(response);
     }
 
-    const result: XenditPaymentResponse = await response.json();
-    this.logger_.info(`Payment request created: ${result.id} (status: ${result.status})`);
+    const result: XenditInvoiceResponse = await response.json();
+    this.logger_.info(
+      `Payment Link created: ${result.id} (status: ${result.status}, URL: ${result.invoice_url})`,
+    );
     return result;
   }
 
   /**
-   * Retrieve a payment request from Xendit
+   * Retrieve an Invoice from Xendit
    */
-  private async retrievePaymentFromXendit(paymentId: string): Promise<XenditPaymentResponse> {
-    this.logger_.debug(`Retrieving payment request: ${paymentId}`);
+  private async retrieveInvoice(invoiceId: string): Promise<XenditInvoiceResponse> {
+    this.logger_.debug(`Retrieving invoice: ${invoiceId}`);
 
-    const response = await fetch(`${this.apiUrl}/v3/payment_requests/${paymentId}`, {
+    const response = await fetch(`${this.apiUrl}/v2/invoices/${invoiceId}`, {
       method: "GET",
       headers: this.getAuthHeaders(),
     });
 
     if (!response.ok) {
       if (response.status === 404) {
-        throw new MedusaError(
-          MedusaError.Types.NOT_FOUND,
-          `Payment request not found: ${paymentId}`,
-        );
+        throw new MedusaError(MedusaError.Types.NOT_FOUND, `Invoice not found: ${invoiceId}`);
       }
       await this.handleApiError(response);
     }
@@ -516,16 +545,35 @@ class XenditProviderService extends AbstractPaymentProvider<XenditProviderOption
     return result;
   }
 
-  private mapXenditStatusToMedusa(status: XenditPaymentResponse["status"]): PaymentSessionStatus {
+  /**
+   * Expire (cancel) an invoice
+   */
+  private async expireInvoice(invoiceId: string): Promise<XenditInvoiceResponse> {
+    this.logger_.info(`Expiring invoice: ${invoiceId}`);
+
+    const response = await fetch(`${this.apiUrl}/v2/invoices/${invoiceId}/expire!`, {
+      method: "POST",
+      headers: this.getAuthHeaders(),
+    });
+
+    if (!response.ok) {
+      await this.handleApiError(response);
+    }
+
+    const result: XenditInvoiceResponse = await response.json();
+    this.logger_.info(`Invoice expired: ${result.id} (status: ${result.status})`);
+    return result;
+  }
+
+  /**
+   * Map Xendit Invoice status to Medusa PaymentSessionStatus
+   */
+  private mapInvoiceStatusToMedusa(status: XenditInvoiceStatus): PaymentSessionStatus {
     switch (status) {
-      case "SUCCEEDED":
+      case "PAID":
         return PaymentSessionStatus.AUTHORIZED;
-      case "REQUIRES_ACTION":
+      case "PENDING":
         return PaymentSessionStatus.PENDING;
-      case "FAILED":
-        return PaymentSessionStatus.ERROR;
-      case "CANCELED":
-        return PaymentSessionStatus.CANCELED;
       case "EXPIRED":
         return PaymentSessionStatus.CANCELED;
       default:
