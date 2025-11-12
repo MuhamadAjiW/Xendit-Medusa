@@ -16,7 +16,7 @@ function checkEnvVariables() {
 
   if (missingEnvs.length > 0) {
     console.error(
-      c.red.bold("\n🚫 Error: Missing required environment variables\n")
+      c.red.bold("\nError: Missing required environment variables\n")
     )
 
     missingEnvs.forEach(function (env) {

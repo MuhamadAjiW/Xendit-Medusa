@@ -4,8 +4,9 @@ A comprehensive payment provider plugin for Medusa v2 that integrates with [Xend
 
 ## Features
 
-- Full support for Xendit Payments API v3
-- Multiple payment methods:
+- Integration with Xendit Payment Links API (v2/invoices)
+- Hosted checkout page - customers complete payment on Xendit's secure platform
+- Multiple payment methods supported by Xendit:
   - E-wallets (OVO, DANA, GoPay, LinkAja, ShopeePay, etc.)
   - Virtual Accounts (BCA, BNI, BRI, Mandiri, Permata, etc.)
   - QR Codes (QRIS)
@@ -16,7 +17,7 @@ A comprehensive payment provider plugin for Medusa v2 that integrates with [Xend
 - Secure webhook verification
 - Comprehensive logging and error handling
 - Multi-currency support
-- Refund support
+- Test mode with payment simulation for local development
 
 ## Installation
 
@@ -50,9 +51,8 @@ export default defineConfig({
             options: {
               api_key: process.env.XENDIT_SECRET_KEY,
               webhook_token: process.env.XENDIT_WEBHOOK_TOKEN, // Optional but recommended
-              api_url: "https://api.xendit.co", // Optional, defaults to production
-              default_country: "ID", // Optional, defaults to Indonesia
-              default_capture_method: "AUTOMATIC", // Optional, defaults to AUTOMATIC
+              default_country: "ID", // Required: ISO 3166-1 alpha-2 country code
+              test_mode: process.env.XENDIT_TEST_MODE === "true", // Optional: enables payment simulation
             },
           },
         ],
@@ -131,87 +131,125 @@ The plugin automatically verifies incoming webhooks using the `x-callback-token`
 
 Reference: [Xendit Webhook Security Best Practices](https://docs.xendit.co/docs/handling-webhooks)
 
-## Supported Payment Channels
+## Supported Payment Methods
+
+When using Payment Links, customers are redirected to Xendit's hosted checkout page where they can choose from various payment methods enabled for your account. The available methods depend on your Xendit account configuration and may include:
 
 ### E-Wallets
-- **OVO** - `OVO`
-- **DANA** - `DANA`
-- **LinkAja** - `LINKAJA`
-- **ShopeePay** - `SHOPEEPAY`
-- **JeniusPay** - `JENIUSPAY`
-- **AstraPay** - `ASTRAPAY`
+- OVO
+- DANA
+- LinkAja
+- ShopeePay
+- JeniusPay
+- AstraPay
 
 ### Virtual Accounts
-- **BCA** - `BCA`
-- **BNI** - `BNI`
-- **BRI** - `BRI`
-- **Mandiri** - `MANDIRI`
-- **Permata** - `PERMATA`
-- **BJB** - `BJB`
-- **BSI** - `BSI`
-- **CIMB** - `CIMB`
+- BCA
+- BNI
+- BRI
+- Mandiri
+- Permata
+- BJB
+- BSI
+- CIMB
 
 ### QR Codes
-- **QRIS** - `QRIS` (Indonesian standard QR)
+- QRIS (Indonesian standard QR)
 
 ### Cards
-- **Credit Card** - `CREDIT_CARD`
-- **Debit Card** - `DEBIT_CARD`
+- Credit Card
+- Debit Card
 
 ### Retail Outlets
-- **Alfamart** - `ALFAMART`
-- **Indomaret** - `INDOMARET`
+- Alfamart
+- Indomaret
 
 ### Direct Debit
-- **BRI Direct Debit** - `DD_BRI`
-- **BCA KlikPay** - `DD_BCA_KLIKPAY`
-- **Mandiri Direct Debit** - `DD_MANDIRI`
+- BRI Direct Debit
+- BCA KlikPay
+- Mandiri Direct Debit
 
-## Usage in Storefront
+**Note:** The actual payment methods available to your customers depend on your Xendit account settings and the currencies/countries you support. Configure these in your [Xendit Dashboard](https://dashboard.xendit.co/).
 
-### Example: E-Wallet Payment
+## How It Works
+
+This plugin uses **Xendit Payment Links** (invoices), which provides a hosted checkout experience:
+
+1. **Create Payment Link**: When a customer initiates payment, the plugin creates a Xendit invoice via the `/v2/invoices` API endpoint
+2. **Redirect to Xendit**: The customer is redirected to Xendit's secure hosted checkout page where they can select their preferred payment method
+3. **Customer Completes Payment**: The customer completes payment on Xendit's platform
+4. **Webhook Notification**: Xendit sends a webhook to your server with the payment status (PAID, EXPIRED, etc.)
+5. **Order Completion**: The plugin processes the webhook and updates the order status accordingly
+
+### Payment Flow Example
 
 ```typescript
-const paymentSession = await medusa.paymentCollections.initiatePaymentSession({
-  provider_id: "xendit",
-  data: {
-    channel_code: "OVO",
-    channel_properties: {
-      mobile_number: "+628123456789",
-      success_return_url: "https://your-store.com/order/success",
-      failure_return_url: "https://your-store.com/order/failed",
-    },
-  },
-});
+// When customer proceeds to checkout with Xendit:
+// 1. Medusa calls the Xendit provider to initiate payment
+// 2. Plugin creates a Xendit invoice (Payment Link)
+// 3. Customer is redirected to the invoice_url
 
-// Redirect user to payment URL
-if (paymentSession.data.actions?.[0]?.url) {
-  window.location.href = paymentSession.data.actions[0].url;
+// Example response structure:
+{
+  "invoice_url": "https://checkout.xendit.co/web/inv-xxxxx",
+  "id": "inv-xxxxx",
+  "external_id": "medusa_order_123",
+  "status": "PENDING",
+  "amount": 100000
 }
+
+// 4. Customer completes payment on Xendit's page
+// 5. Xendit sends webhook to /hooks/payment/xendit
+// 6. Plugin updates order status to paid
 ```
 
-### Example: Virtual Account
+### Customizing Payment Methods
 
-```typescript
-const paymentSession = await medusa.paymentCollections.initiatePaymentSession({
-  provider_id: "xendit",
-  data: {
-    channel_code: "BCA",
-  },
-});
-
-// Display account number to customer
-const accountNumber = paymentSession.data.actions[0].data.account_details.account_number;
-```
+You can customize which payment methods are available on the Xendit checkout page by configuring the invoice creation. The plugin automatically handles the redirect flow and webhook processing.
 
 ## Testing
 
-### Development Mode
+### Development Mode with Test Mode (Recommended for Local Development)
+
+Enable test mode to simulate payments without needing webhooks to reach localhost:
+
+```bash
+# .env
+XENDIT_SECRET_KEY=xnd_development_your_test_key_here
+XENDIT_TEST_MODE=true
+```
+
+**Benefits:**
+- No need for ngrok or webhook tunneling
+- Manually simulate payment completion via API
+- Perfect for local development
+- Auto-detects test API keys
+
+**Quick Usage:**
+```bash
+# 1. Create payment normally through your checkout
+# 2. Get the invoice ID from logs or URL
+# 3. Simulate payment completion:
+curl -X POST http://localhost:9000/admin/xendit/simulate \
+  -H "Content-Type: application/json" \
+  -d '{"invoice_id": "YOUR_INVOICE_ID"}'
+```
+
+**Full Guide:** See [`docs/TEST_MODE_GUIDE.md`](../../docs/TEST_MODE_GUIDE.md)
+
+### Production Testing with Webhooks
 
 Use Xendit test credentials for development:
 
 ```bash
 XENDIT_SECRET_KEY=xnd_development_your_test_key_here
+XENDIT_TEST_MODE=false  # Disable simulation, use real webhooks
+```
+
+For webhook testing, use ngrok or similar:
+```bash
+ngrok http 9000
+# Configure webhook URL in Xendit Dashboard
 ```
 
 ### Test Payment Scenarios
@@ -297,9 +335,32 @@ export default defineConfig({
 });
 ```
 
+## Important Notes
+
+### Payment Links vs Payment API
+
+This plugin uses **Xendit Payment Links** (Invoice API - `/v2/invoices`), which provides:
+- Hosted checkout page managed by Xendit
+- Automatic payment method selection UI
+- Lower integration complexity
+- No need to handle individual payment channel implementations
+
+If you need direct API integration with granular control over each payment channel, consider using Xendit's Payment API instead.
+
+### Refunds
+
+Payment Links (invoices) have limited refund capabilities. For full refund support, you may need to:
+- Use Xendit's Payment API instead of Payment Links
+- Handle refunds manually through the Xendit Dashboard
+- Contact Xendit support for refund processing
+
+Refer to [Xendit's refund documentation](https://docs.xendit.co/docs/refunds) for more details.
+
 ## Resources
 
-- [Xendit Documentation](https://docs.xendit.co/)
+- [Xendit Payment Links Documentation](https://docs.xendit.co/apidocs/payment-link)
+- [Xendit Invoice API Reference](https://docs.xendit.co/apidocs/payment-link#create-invoice)
+- [Xendit Webhook Guide](https://docs.xendit.co/docs/handling-webhooks)
 - [Xendit Dashboard](https://dashboard.xendit.co/)
 - [Medusa Documentation](https://docs.medusajs.com)
 - [GitHub Repository](https://github.com/MuhamadAjiW/xendit-medusa)

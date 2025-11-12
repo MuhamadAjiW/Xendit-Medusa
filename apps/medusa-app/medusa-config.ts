@@ -25,6 +25,7 @@ module.exports = defineConfig({
               api_key: process.env.XENDIT_SECRET_KEY || "",
               webhook_token: process.env.XENDIT_WEBHOOK_TOKEN,
               default_country: process.env.XENDIT_DEFAULT_COUNTRY || "ID",
+              test_mode: process.env.XENDIT_TEST_MODE === "true" || false,
             },
           },
         ],

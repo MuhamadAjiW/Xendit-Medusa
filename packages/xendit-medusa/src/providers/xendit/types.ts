@@ -23,6 +23,7 @@
  *     api_key: process.env.XENDIT_SECRET_KEY,
  *     webhook_token: process.env.XENDIT_WEBHOOK_TOKEN, // Optional but recommended
  *     default_country: "ID", // Required: ISO 3166-1 alpha-2 code
+ *     test_mode: process.env.NODE_ENV !== "production", // Optional: enables simulation features
  *   }
  * }
  * ```
@@ -46,6 +47,17 @@ export type XenditProviderOptions = {
    * Examples: "ID" (Indonesia), "PH" (Philippines), "MY" (Malaysia), "TH" (Thailand)
    */
   default_country: string;
+
+  /**
+   * Test Mode (optional, defaults to false)
+   * When enabled:
+   * - Allows manual payment simulation via API endpoint
+   * - Provides detailed logging for debugging
+   * - Can bypass webhook requirements for local testing
+   *
+   * WARNING: Never enable in production!
+   */
+  test_mode?: boolean;
 };
 
 /**

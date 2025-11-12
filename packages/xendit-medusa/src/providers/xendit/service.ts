@@ -49,12 +49,14 @@ class XenditProviderService extends AbstractPaymentProvider<XenditProviderOption
   protected options_: XenditProviderOptions;
   protected readonly apiUrl = "https://api.xendit.co";
   protected logger_: Logger;
+  protected isTestMode: boolean;
 
   constructor(container: InjectedDependencies, options: XenditProviderOptions) {
     super(container, options);
 
     this.logger_ = container.logger;
     this.options_ = options;
+    this.isTestMode = options.test_mode || false;
 
     // Validate required options
     if (!options.api_key) {
@@ -68,9 +70,21 @@ class XenditProviderService extends AbstractPaymentProvider<XenditProviderOption
       );
     }
 
+    // Auto-detect test mode from API key if not explicitly set
+    if (options.api_key.startsWith("xnd_development_")) {
+      this.isTestMode = true;
+      this.logger_.info("Test mode auto-detected from API key");
+    }
+
     this.logger_.info(
-      `Xendit Payment Provider initialized for country: ${options.default_country}`,
+      `Xendit Payment Provider initialized for country: ${options.default_country}${this.isTestMode ? " [TEST MODE]" : ""}`,
     );
+
+    if (this.isTestMode) {
+      this.logger_.warn(
+        "TEST MODE ENABLED - Payment simulation features are active. Do not use in production!",
+      );
+    }
   }
 
   static validateOptions(options: Record<string, unknown>): void {
@@ -584,6 +598,79 @@ class XenditProviderService extends AbstractPaymentProvider<XenditProviderOption
   protected buildError(message: string, error: Error | unknown): Error {
     const errorMessage = error instanceof Error ? error.message : "Unknown error";
     return new MedusaError(MedusaError.Types.INVALID_DATA, `${message}: ${errorMessage}`);
+  }
+
+  /**
+   * Simulate payment completion for testing (TEST MODE ONLY)
+   *
+   * This method allows you to manually mark an invoice as PAID for local testing
+   * without needing webhooks to reach localhost.
+   *
+   * Usage:
+   * 1. Create a payment via initiatePayment
+   * 2. Call this method with the invoice ID
+   * 3. The payment will be marked as PAID
+   *
+   * Note: This only works when test_mode is enabled
+   *
+   * @param invoiceId - The Xendit invoice ID to simulate payment for
+   * @returns The updated invoice with PAID status
+   * @throws Error if not in test mode or if invoice not found
+   */
+  async simulatePayment(invoiceId: string): Promise<XenditInvoiceResponse> {
+    if (!this.isTestMode) {
+      throw new MedusaError(
+        MedusaError.Types.NOT_ALLOWED,
+        "Payment simulation is only available in test mode. Set test_mode: true in your config.",
+      );
+    }
+
+    this.logger_.info(`[TEST MODE] Simulating payment for invoice: ${invoiceId}`);
+
+    try {
+      // Retrieve the invoice first to ensure it exists
+      const invoice = await this.retrieveInvoice(invoiceId);
+
+      if (invoice.status === "PAID") {
+        this.logger_.warn(`Invoice ${invoiceId} is already PAID`);
+        return invoice;
+      }
+
+      if (invoice.status === "EXPIRED") {
+        throw new MedusaError(
+          MedusaError.Types.INVALID_DATA,
+          `Cannot simulate payment for expired invoice: ${invoiceId}`,
+        );
+      }
+
+      // In test mode, we can't actually change the invoice status via API
+      // But we can return a mocked PAID response that mimics what would happen
+      const simulatedInvoice: XenditInvoiceResponse = {
+        ...invoice,
+        status: "PAID",
+        paid_amount: invoice.amount,
+        paid_at: new Date().toISOString(),
+        payment_method: "SIMULATION",
+        payment_channel: "TEST_MODE",
+        payment_id: `simulated_${Date.now()}`,
+      };
+
+      this.logger_.info(`[TEST MODE] Payment simulated successfully for invoice: ${invoiceId}`);
+      this.logger_.info(
+        "Note: This is a simulated payment. In production, you would receive a webhook from Xendit.",
+      );
+
+      return simulatedInvoice;
+    } catch (error) {
+      throw this.buildError("Failed to simulate payment", error);
+    }
+  }
+
+  /**
+   * Check if the provider is running in test mode
+   */
+  isInTestMode(): boolean {
+    return this.isTestMode;
   }
 }
 

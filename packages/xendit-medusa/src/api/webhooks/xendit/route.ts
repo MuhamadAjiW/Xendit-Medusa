@@ -63,7 +63,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse): Promise<voi
       }
     } else {
       logger.warn(
-        "⚠️  SECURITY WARNING: XENDIT_WEBHOOK_TOKEN not configured - webhook signature verification skipped. " +
+        "SECURITY WARNING: XENDIT_WEBHOOK_TOKEN not configured - webhook signature verification skipped. " +
           "This is not recommended for production. Set XENDIT_WEBHOOK_TOKEN in your environment variables.",
       );
     }
