@@ -1,10 +1,10 @@
 "use client"
 
 import { loadStripe } from "@stripe/stripe-js"
-import React from "react"
+import type React from "react"
 import StripeWrapper from "./stripe-wrapper"
-import { HttpTypes } from "@medusajs/types"
-import { isStripeLike } from "@lib/constants"
+import type { HttpTypes } from "@medusajs/types"
+import { isStripeLike, isXendit } from "@lib/constants"
 
 type PaymentWrapperProps = {
   cart: HttpTypes.StoreCart
@@ -28,6 +28,7 @@ const PaymentWrapper: React.FC<PaymentWrapperProps> = ({ cart, children }) => {
     (s) => s.status === "pending"
   )
 
+  // Stripe/Medusa Payments integration
   if (
     isStripeLike(paymentSession?.provider_id) &&
     paymentSession &&
@@ -42,6 +43,12 @@ const PaymentWrapper: React.FC<PaymentWrapperProps> = ({ cart, children }) => {
         {children}
       </StripeWrapper>
     )
+  }
+
+  // Xendit doesn't need a special wrapper
+  // Payment is handled directly via API calls and redirects
+  if (isXendit(paymentSession?.provider_id)) {
+    return <div>{children}</div>
   }
 
   return <div>{children}</div>

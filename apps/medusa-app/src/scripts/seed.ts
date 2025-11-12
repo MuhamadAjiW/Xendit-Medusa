@@ -1,4 +1,4 @@
-import { CreateInventoryLevelInput, ExecArgs } from "@medusajs/framework/types";
+import type { CreateInventoryLevelInput, ExecArgs } from "@medusajs/framework/types";
 import {
   ContainerRegistrationKeys,
   Modules,
@@ -117,7 +117,7 @@ export default async function seedDemoData({ container }: ExecArgs) {
           name: "Europe",
           currency_code: "eur",
           countries,
-          payment_providers: ["pp_system_default"],
+          payment_providers: ["pp_system_default", "pp_xendit_xendit"],
         },
       ],
     },

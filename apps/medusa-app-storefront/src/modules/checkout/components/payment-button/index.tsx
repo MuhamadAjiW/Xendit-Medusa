@@ -1,11 +1,12 @@
 "use client"
 
-import { isManual, isStripeLike } from "@lib/constants"
+import { isManual, isStripeLike, isXendit } from "@lib/constants"
 import { placeOrder } from "@lib/data/cart"
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 import { Button } from "@medusajs/ui"
 import { useElements, useStripe } from "@stripe/react-stripe-js"
-import React, { useState } from "react"
+import type React from "react"
+import { useState } from "react"
 import ErrorMessage from "../error-message"
 
 type PaymentButtonProps = {
@@ -35,6 +36,14 @@ const PaymentButton: React.FC<PaymentButtonProps> = ({
           data-testid={dataTestId}
         />
       )
+    case isXendit(paymentSession?.provider_id):
+      return (
+        <XenditPaymentButton
+          notReady={notReady}
+          cart={cart}
+          data-testid={dataTestId}
+        />
+      )
     case isManual(paymentSession?.provider_id):
       return (
         <ManualTestPaymentButton notReady={notReady} data-testid={dataTestId} />
@@ -42,6 +51,88 @@ const PaymentButton: React.FC<PaymentButtonProps> = ({
     default:
       return <Button disabled>Select a payment method</Button>
   }
+}
+
+const XenditPaymentButton = ({
+  cart,
+  notReady,
+  "data-testid": dataTestId,
+}: {
+  cart: HttpTypes.StoreCart
+  notReady: boolean
+  "data-testid"?: string
+}) => {
+  const [submitting, setSubmitting] = useState(false)
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
+
+  const session = cart.payment_collection?.payment_sessions?.find(
+    (s) => s.status === "pending"
+  )
+
+  const handlePayment = async () => {
+    setSubmitting(true)
+    setErrorMessage(null)
+
+    try {
+      // For Xendit, the payment session should already be created with the channel
+      // The actions object contains the redirect URL or payment instructions
+      const actions = session?.data?.actions as
+        | Array<{
+            action?: string
+            url?: string
+            url_type?: string
+            qr_code?: string
+            data?: unknown
+          }>
+        | undefined
+
+      if (actions && actions.length > 0) {
+        const action = actions[0]
+
+        // Check if we need to redirect the customer
+        if (action.action === "REDIRECT_CUSTOMER" && action.url) {
+          // For e-wallets and some payment methods, redirect to payment page
+          window.location.href = action.url
+          return
+        }
+
+        // For other payment methods (like Virtual Account, QRIS),
+        // the payment information is displayed to the user
+        // They complete payment outside and webhook will notify us
+      }
+
+      // Complete the order after payment initiation
+      // The actual payment confirmation will come via webhook
+      await placeOrder()
+        .catch((err) => {
+          setErrorMessage(err.message)
+        })
+        .finally(() => {
+          setSubmitting(false)
+        })
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : "Payment failed")
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <>
+      <Button
+        disabled={notReady}
+        onClick={handlePayment}
+        size="large"
+        isLoading={submitting}
+        data-testid={dataTestId}
+      >
+        Place order
+      </Button>
+      <ErrorMessage
+        error={errorMessage}
+        data-testid="xendit-payment-error-message"
+      />
+    </>
+  )
 }
 
 const StripePaymentButton = ({
@@ -74,7 +165,7 @@ const StripePaymentButton = ({
     (s) => s.status === "pending"
   )
 
-  const disabled = !stripe || !elements ? true : false
+  const disabled = !stripe || !elements
 
   const handlePayment = async () => {
     setSubmitting(true)
@@ -89,10 +180,7 @@ const StripePaymentButton = ({
         payment_method: {
           card: card,
           billing_details: {
-            name:
-              cart.billing_address?.first_name +
-              " " +
-              cart.billing_address?.last_name,
+            name: `${cart.billing_address?.first_name} ${cart.billing_address?.last_name}`,
             address: {
               city: cart.billing_address?.city ?? undefined,
               country: cart.billing_address?.country_code ?? undefined,
