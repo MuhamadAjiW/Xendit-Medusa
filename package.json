@@ -3,7 +3,7 @@
   "version": "0.0.1",
   "private": true,
   "scripts": {
-    "dev": "pnpm --parallel --filter \"./packages/*\" dev",
+    "dev": "pnpm --parallel --filter \"./apps/*\" --filter \"./packages/*\" dev",
     "build": "pnpm --filter \"./packages/*\" build",
     "lint": "pnpm --filter \"./packages/*\" lint",
     "format": "biome format --write .",
