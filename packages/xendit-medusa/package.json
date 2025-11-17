@@ -40,11 +40,12 @@
   ],
   "scripts": {
     "build": "medusa plugin:build && tsc -p tsconfig.json",
-    "compile": "medusa plugin:build",
+    "compile": "medusa plugin:build && tsc -p tsconfig.json",
     "dev": "medusa plugin:develop",
-    "prepublishOnly": "medusa plugin:build",
-    "prepare": "medusa plugin:build && tsc -p tsconfig.json",
-    "postinstall": "medusa plugin:build && tsc -p tsconfig.json"
+    "dev:watch": "medusa plugin:build && tsc -w -p tsconfig.json & medusa plugin:develop",
+    "prepublishOnly": "medusa plugin:build && tsc -p tsconfig.json",
+    "prepare": "medusa plugin:build",
+    "postinstall": "medusa plugin:build"
   },
   "devDependencies": {
     "@medusajs/admin-sdk": "2.11.2",

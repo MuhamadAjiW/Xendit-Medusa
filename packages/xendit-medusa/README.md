@@ -45,6 +45,21 @@ pnpm -w build
 
 If you install `xendit-medusa` from npm, the `prepublishOnly` script will build the plugin automatically at publish time. For local development the package also contains `prepare` and `postinstall` scripts that run the build during install.
 
+### 1.2 Quick Dev (Watch) Mode
+
+When developing the plugin locally, you can run a watch mode that keeps server JS files compiled as you edit the TypeScript sources. Use the included `dev:watch` script in the plugin package:
+
+```bash
+# In a new terminal from repo root
+pnpm -w --filter xendit-medusa dev:watch
+
+# Start the Medusa app dev server (in another terminal)
+cd apps/medusa-app
+pnpm dev
+```
+
+This keeps `.medusa/server/src` updated with compiled JS and reloads the dev server.
+
 ### 2. Configure the Plugin
 
 Add the Xendit payment provider to your `medusa-config.ts`:
