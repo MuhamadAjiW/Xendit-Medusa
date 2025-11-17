@@ -39,10 +39,12 @@
     "southeast-asia"
   ],
   "scripts": {
-    "build": "medusa plugin:build",
+    "build": "medusa plugin:build && tsc -p tsconfig.json",
     "compile": "medusa plugin:build",
     "dev": "medusa plugin:develop",
-    "prepublishOnly": "medusa plugin:build"
+    "prepublishOnly": "medusa plugin:build",
+    "prepare": "medusa plugin:build && tsc -p tsconfig.json",
+    "postinstall": "medusa plugin:build && tsc -p tsconfig.json"
   },
   "devDependencies": {
     "@medusajs/admin-sdk": "2.11.2",
