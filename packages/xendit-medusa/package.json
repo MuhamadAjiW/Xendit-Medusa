@@ -52,6 +52,7 @@
     "@medusajs/test-utils": "2.11.2",
     "@medusajs/ui": "4.0.25",
     "@medusajs/icons": "2.11.2",
+    "@medusajs/admin-shared": "2.11.2",
     "@swc/core": "1.5.7",
     "@types/node": "^20.0.0",
     "@types/react": "^18.3.2",
@@ -71,7 +72,8 @@
     "@medusajs/test-utils": "2.11.2",
     "@medusajs/medusa": "2.11.2",
     "@medusajs/ui": "4.0.25",
-    "@medusajs/icons": "2.11.2"
+    "@medusajs/icons": "2.11.2",
+    "@medusajs/admin-shared": "2.11.2"
   },
   "engines": {
     "node": ">=20"
